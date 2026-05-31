@@ -8,8 +8,10 @@ import multiprocessing
 bind = "127.0.0.1:8000"
 
 # Worker configuration
-# Rule of thumb: (2 × CPU cores) + 1
-workers = multiprocessing.cpu_count() * 2 + 1
+# For small instances (t3.micro/small): use 2 workers
+# For larger instances: use (2 × CPU cores) + 1
+# workers = multiprocessing.cpu_count() * 2 + 1
+workers = 2
 worker_class = "uvicorn.workers.UvicornWorker"
 
 # Timeout (seconds) — increase for slow geospatial queries

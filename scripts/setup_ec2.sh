@@ -34,7 +34,7 @@ echo "════════════════════════�
 echo ""
 echo "📦 [1/8] Installing system packages..."
 apt update && apt upgrade -y
-apt install -y python3.11 python3.11-venv python3.11-dev \
+apt install -y python3 python3-venv python3-dev \
     python3-pip nginx certbot python3-certbot-nginx \
     git curl ufw
 
@@ -63,9 +63,13 @@ fi
 # ── 4. Python Virtual Environment & Dependencies ────────────────
 echo ""
 echo "🐍 [4/8] Setting up Python virtual environment..."
+PYTHON_BIN=$(which python3)
+PYTHON_VER=$(python3 --version 2>&1)
+echo "   Using ${PYTHON_VER} at ${PYTHON_BIN}"
+
 sudo -u "${SERVICE_USER}" bash -c "
     cd ${APP_DIR}
-    python3.11 -m venv .venv
+    python3 -m venv .venv
     source .venv/bin/activate
     pip install --upgrade pip -q
     pip install -r requirements.txt -q

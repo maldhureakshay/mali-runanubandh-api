@@ -1,7 +1,7 @@
 from typing import Optional
 from fastapi import APIRouter, Query, HTTPException, status
 from services.profile_service import profile_service
-from models.profile import ProfileWithDistance
+from models.profile import ProfileBase, ProfileWithDistance
 from models.common import PaginatedResponse
 from database import db_manager
 
@@ -78,6 +78,48 @@ async def get_nearby_profiles(
         )
 
 @router.get(
+    "/similar/{profile_id}",
+    response_model=PaginatedResponse[ProfileBase],
+    response_model_by_alias=False,
+    summary="Find similar profiles",
+    description=(
+        "Returns similar profiles for a given profile ID based on opposite gender, "
+        "compatible height range, compatible birth date range, and matching marriage type."
+    )
+)
+async def get_similar_profiles(
+    profile_id: str,
+    page: int = Query(
+        1,
+        description="Page number for pagination",
+        ge=1
+    ),
+    limit: int = Query(
+        10,
+        description="Number of profiles to retrieve per page (max 100)",
+        ge=1,
+        le=100
+    ),
+):
+    try:
+        paginated_result = await profile_service.find_similar_profiles(
+            profile_id=profile_id,
+            page=page,
+            limit=limit,
+        )
+        return paginated_result
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err)
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching similar profiles: {str(exc)}"
+        )
+
+@router.get(
     "/health",
     summary="Service Health Check",
     description="Validates API container status and verifies active MongoDB connectivity."
@@ -93,3 +135,4 @@ async def health_check():
             detail={"status": "unhealthy", "database": "disconnected"}
         )
     return {"status": "healthy", "database": "connected"}
+

@@ -1,7 +1,8 @@
 import logging
 from typing import Optional, List, Tuple
+from datetime import datetime, timedelta
 from database import db_manager
-from models.profile import ProfileWithDistance
+from models.profile import ProfileBase, ProfileWithDistance
 from models.common import PaginatedResponse
 
 logger = logging.getLogger(__name__)
@@ -134,5 +135,150 @@ class ProfileService:
             logger.error(f"Error executing nearby profile search: {e}")
             raise e
 
+    async def find_similar_profiles(
+        self,
+        profile_id: str,
+        page: int = 1,
+        limit: int = 10,
+    ) -> PaginatedResponse[ProfileBase]:
+        """
+        Finds similar profiles for a given profile ID based on:
+        - Opposite gender
+        - Compatible height range (based on gender-specific rules)
+        - Compatible birth date range (±6 years based on gender)
+        - Exact marriage type match
+
+        Male seeking Female:
+            Height: female height_cm between (male_height - 20) and male_height
+            Birth date: female birth_date between male_birth_date and male_birth_date + 6 years
+
+        Female seeking Male:
+            Height: male height_cm between female_height and (female_height + 30)
+            Birth date: male birth_date between female_birth_date - 6 years and female_birth_date
+        """
+        collection = db_manager.get_collection()
+        skip = (page - 1) * limit
+
+        # 1. Fetch the source profile (IDs are stored as UUID strings, not ObjectId)
+        source_doc = await collection.find_one({"_id": profile_id})
+
+        if not source_doc:
+            raise ValueError(f"Profile not found with ID: {profile_id}")
+
+        source_gender = (source_doc.get("gender") or "").strip().lower()
+        source_height_cm = source_doc.get("height_cm")
+        source_birth_date = source_doc.get("birth_date")
+        source_marriage_type = source_doc.get("type")
+
+        if not source_gender:
+            raise ValueError("Source profile does not have a gender specified.")
+
+        # 2. Build the match filter for similar profiles
+        match_filter = {
+            "active": True,
+            "_id": {"$ne": profile_id},  # Exclude the source profile
+        }
+
+
+        # Opposite gender
+        if source_gender == "male":
+            match_filter["gender"] = {"$regex": "^female$", "$options": "i"}
+        else:
+            match_filter["gender"] = {"$regex": "^male$", "$options": "i"}
+
+        # Height range filter
+        if source_height_cm is not None:
+            if source_gender == "male":
+                # Female height should be between (male_height - 20) and male_height
+                height_lower = source_height_cm - 20
+                height_upper = source_height_cm
+                match_filter["height_cm"] = {"$gte": height_lower, "$lte": height_upper}
+            else:
+                # Male height should be between female_height and (female_height + 30)
+                height_lower = source_height_cm
+                height_upper = source_height_cm + 30
+                match_filter["height_cm"] = {"$gte": height_lower, "$lte": height_upper}
+
+        # Birth date range filter
+        if source_birth_date is not None:
+            # Ensure birth_date is a datetime object
+            if isinstance(source_birth_date, str):
+                try:
+                    source_birth_date = datetime.fromisoformat(source_birth_date)
+                except (ValueError, TypeError):
+                    source_birth_date = None
+
+            if source_birth_date is not None:
+                if source_gender == "male":
+                    # Female should be younger or up to 6 years younger than male
+                    # birth_date between male_birth_date and male_birth_date + 6 years
+                    date_lower = source_birth_date
+                    date_upper = source_birth_date.replace(year=source_birth_date.year + 6)
+                    match_filter["birth_date"] = {"$gte": date_lower, "$lte": date_upper}
+                else:
+                    # Male should be older or up to 6 years older than female
+                    # birth_date between female_birth_date - 6 years and female_birth_date
+                    date_lower = source_birth_date.replace(year=source_birth_date.year - 6)
+                    date_upper = source_birth_date
+                    match_filter["birth_date"] = {"$gte": date_lower, "$lte": date_upper}
+
+        # Marriage type must match exactly (case-insensitive)
+        if source_marriage_type:
+            match_filter["type"] = {"$regex": f"^{source_marriage_type}$", "$options": "i"}
+
+        # 3. Build the aggregation pipeline with $facet for pagination
+        pipeline = [
+            {"$match": match_filter},
+            {
+                "$facet": {
+                    "metadata": [
+                        {"$count": "total"}
+                    ],
+                    "data": [
+                        {"$skip": skip},
+                        {"$limit": limit},
+                    ]
+                }
+            }
+        ]
+
+        logger.info(
+            f"Executing similar profile search for profile_id={profile_id}, "
+            f"gender={source_gender}, height_cm={source_height_cm}, "
+            f"marriage_type={source_marriage_type}, page={page}, limit={limit}"
+        )
+
+        try:
+            cursor = collection.aggregate(pipeline)
+            results = await cursor.to_list(length=1)
+
+            if not results:
+                return PaginatedResponse(data=[], total=0, page=page, limit=limit, has_more=False)
+
+            facet_result = results[0]
+            metadata = facet_result.get("metadata", [])
+            data_list = facet_result.get("data", [])
+
+            total = metadata[0]["total"] if metadata else 0
+
+            profiles = []
+            for doc in data_list:
+                profiles.append(ProfileBase.model_validate(doc))
+
+            has_more = total > (skip + len(profiles))
+
+            return PaginatedResponse(
+                data=profiles,
+                total=total,
+                page=page,
+                limit=limit,
+                has_more=has_more
+            )
+
+        except Exception as e:
+            logger.error(f"Error executing similar profile search: {e}")
+            raise e
+
 # Exported service singleton
 profile_service = ProfileService()
+

@@ -210,16 +210,16 @@ class ProfileService:
 
             if source_birth_date is not None:
                 if source_gender == "male":
-                    # Female should be younger or up to 6 years younger than male
-                    # birth_date between male_birth_date and male_birth_date + 6 years
-                    date_lower = source_birth_date
+                    # Female should be around the same age or up to 6 years younger
+                    # Allow 3 months older than the male as well
+                    date_lower = source_birth_date - timedelta(days=90)
                     date_upper = source_birth_date.replace(year=source_birth_date.year + 6)
                     match_filter["birth_date"] = {"$gte": date_lower, "$lte": date_upper}
                 else:
-                    # Male should be older or up to 6 years older than female
-                    # birth_date between female_birth_date - 6 years and female_birth_date
+                    # Male should be around the same age or up to 6 years older
+                    # Allow 3 months younger than the female as well
                     date_lower = source_birth_date.replace(year=source_birth_date.year - 6)
-                    date_upper = source_birth_date
+                    date_upper = source_birth_date + timedelta(days=90)
                     match_filter["birth_date"] = {"$gte": date_lower, "$lte": date_upper}
 
         # Marriage type must match exactly (case-insensitive)

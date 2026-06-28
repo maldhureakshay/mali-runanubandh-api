@@ -229,6 +229,9 @@ class ProfileService:
         # 3. Build the aggregation pipeline with $facet for pagination
         pipeline = [
             {"$match": match_filter},
+            # Sort by listing_rand to return profiles in a shuffled order,
+            # ensuring variety across requests while keeping pagination stable
+            {"$sort": {"listing_rand": 1}},
             {
                 "$facet": {
                     "metadata": [

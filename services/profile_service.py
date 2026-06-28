@@ -1,11 +1,17 @@
 import logging
 from typing import Optional, List, Tuple
 from datetime import datetime, timedelta
+from cachetools import TTLCache
 from database import db_manager
 from models.profile import ProfileBase, ProfileWithDistance
 from models.common import PaginatedResponse
 
 logger = logging.getLogger(__name__)
+
+# In-memory cache for similar profiles results.
+# Max 500 entries, each entry auto-expires after 24 hours (86400 seconds).
+_similar_profiles_cache: TTLCache = TTLCache(maxsize=500, ttl=86400)
+
 
 class ProfileService:
     """
@@ -156,6 +162,11 @@ class ProfileService:
             Height: male height_cm between female_height and (female_height + 30)
             Birth date: male birth_date between female_birth_date - 6 years and female_birth_date
         """
+        cache_key = (profile_id, page, limit)
+        if cache_key in _similar_profiles_cache:
+            logger.info(f"Returning similar profiles from cache for profile_id={profile_id}, page={page}, limit={limit}")
+            return _similar_profiles_cache[cache_key]
+
         collection = db_manager.get_collection()
         skip = (page - 1) * limit
 
@@ -270,17 +281,33 @@ class ProfileService:
 
             has_more = total > (skip + len(profiles))
 
-            return PaginatedResponse(
+            response = PaginatedResponse(
                 data=profiles,
                 total=total,
                 page=page,
                 limit=limit,
                 has_more=has_more
             )
+            _similar_profiles_cache[cache_key] = response
+            return response
 
         except Exception as e:
             logger.error(f"Error executing similar profile search: {e}")
             raise e
+
+    def invalidate_similar_profiles_cache(self, profile_id: Optional[str] = None):
+        """
+        Invalidates the similar profiles cache. If a profile_id is provided,
+        only entries for that profile are removed. Otherwise, the entire cache is cleared.
+        """
+        if profile_id:
+            keys_to_delete = [k for k in _similar_profiles_cache.keys() if k[0] == profile_id]
+            for k in keys_to_delete:
+                del _similar_profiles_cache[k]
+            logger.info(f"Invalidated similar profiles cache for profile_id={profile_id}")
+        else:
+            _similar_profiles_cache.clear()
+            logger.info("Invalidated all similar profiles cache")
 
 # Exported service singleton
 profile_service = ProfileService()

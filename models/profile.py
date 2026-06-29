@@ -7,7 +7,7 @@ from typing_extensions import Annotated
 # Helper to robustly cast MongoDB ObjectId (or raw string IDs) into strings
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
-# Custom validator to cleanly coerce BSON Double NaN values to None, protecting against missing numeric values
+# Custom validator to cleanly coerce BSON Double NaN values to None
 def clean_nan_float(v):
     if isinstance(v, float) and math.isnan(v):
         return None
@@ -15,21 +15,21 @@ def clean_nan_float(v):
         return None
     return v
 
-NullableFloat = Annotated[Optional[float], BeforeValidator(clean_nan_float)]
+NullableFloat  = Annotated[Optional[float],              BeforeValidator(clean_nan_float)]
 NullableIncome = Annotated[Optional[Union[int, float, str]], BeforeValidator(clean_nan_float)]
 
+
 class Geoloc(BaseModel):
-    """
-    Geospatial coordinates representing Latitude and Longitude.
-    """
+    """Geospatial coordinates (latitude / longitude)."""
     lat: float
     lng: float
+
 
 class ProfileBase(BaseModel):
     """
     Base Pydantic model for Matrimony Profile document mapping.
-    Includes all fields from the sample document with default values
-    to gracefully handle sparse data in MongoDB.
+    Includes all fields from the MongoDB document with safe defaults
+    to gracefully handle sparse data.
     """
     id: PyObjectId = Field(alias="_id")
     type: Optional[str] = None
@@ -59,7 +59,7 @@ class ProfileBase(BaseModel):
     height_feet: Optional[int] = None
     siblings: Optional[str] = None
     phone: Optional[str] = None
-    birth_date: Optional[Union[str, datetime]] = None  # Resilient to string or ISO datetime formats
+    birth_date: Optional[Union[str, datetime]] = None
     job_location: Optional[str] = None
     relation: Optional[str] = None
     images: List[str] = Field(default_factory=list)
@@ -82,11 +82,11 @@ class ProfileBase(BaseModel):
     fathers_address_longitude: NullableFloat = None
     education: Optional[str] = None
     fathers_phone: List[str] = Field(default_factory=list)
-    
+
     # Internal index fields
     geohash: Optional[str] = Field(alias="_geohash", default=None)
     geoloc: Optional[Geoloc] = Field(alias="_geoloc", default=None)
-    
+
     fathers_address: Optional[str] = None
     last_seen: Optional[datetime] = None
     is_online: Optional[bool] = False
@@ -103,16 +103,35 @@ class ProfileBase(BaseModel):
     expectation: Optional[str] = None
     modified: Optional[datetime] = None
 
+    # Categorisation fields (populated by classification pipeline)
+    education_category: Optional[str] = None
+    education_subcategory: Optional[str] = None
+    job_category: Optional[str] = None
+    job_subcategory: Optional[str] = None
+    profile_text: Optional[str] = None
+
+    # Injected by find_similar_profiles aggregation pipeline.
+    # Max 8 points:  +3 education_category  +2 job_category
+    #                +2 tag overlap          +1 education_subcategory
+    relevance_score: Optional[int] = Field(
+        default=None,
+        description=(
+            "Compatibility score vs the source profile (0–8). "
+            "Only present in similar-profiles results."
+        ),
+    )
+
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: lambda dt: dt.isoformat()}
+        json_encoders={datetime: lambda dt: dt.isoformat()},
     )
+
 
 class ProfileWithDistance(ProfileBase):
     """
     Extends ProfileBase by appending the dynamically calculated
-    distance metrics returned by MongoDB's geospatial operations.
+    distance metrics returned by MongoDB's $geoNear aggregation stage.
     """
-    distance_km: float = Field(..., description="Distance in kilometers from target point")
-    distance_meters: float = Field(..., description="Distance in meters from target point")
+    distance_km: float = Field(..., description="Distance in kilometres from the target point")
+    distance_meters: float = Field(..., description="Distance in metres from the target point")

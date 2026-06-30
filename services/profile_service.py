@@ -1,4 +1,6 @@
 import logging
+import random
+from collections import defaultdict
 from typing import Optional, List, Tuple
 from datetime import datetime, timedelta
 from cachetools import TTLCache
@@ -8,9 +10,13 @@ from models.common import PaginatedResponse
 
 logger = logging.getLogger(__name__)
 
-# In-memory cache for similar profiles results.
+# In-memory cache for daily recommendation IDs.
+# Keyed by profile_id → list of (candidate_id, relevance_score) tuples.
 # Max 500 entries, each entry auto-expires after 24 hours (86400 seconds).
-_similar_profiles_cache: TTLCache = TTLCache(maxsize=500, ttl=86400)
+_daily_recommendations_cache: TTLCache = TTLCache(maxsize=500, ttl=86400)
+
+# Maximum number of diverse recommendations to pre-select per profile per day.
+_MAX_DAILY_RECOMMENDATIONS = 20
 
 
 class ProfileService:
@@ -242,49 +248,67 @@ class ProfileService:
             logger.error(f"Error executing nearby profile search: {e}")
             raise
 
-    async def find_similar_profiles(
+    @staticmethod
+    def _select_diverse_profiles(
+        candidates: List[dict],
+        max_profiles: int = _MAX_DAILY_RECOMMENDATIONS,
+    ) -> List[Tuple[str, int]]:
+        """
+        Groups candidates by relevance_score and randomly selects from each
+        bucket using geometric decay — higher-score buckets get approximately
+        half of the remaining slots each round, guaranteeing that lower-score
+        profiles also appear in the final set.
+
+        Returns a list of (profile_id, relevance_score) tuples ordered by
+        descending score (within each bucket the order is random).
+        """
+        if not candidates:
+            return []
+
+        # Group by integer relevance_score
+        buckets: dict[int, List[str]] = defaultdict(list)
+        for c in candidates:
+            score = int(c.get("relevance_score", 0))
+            buckets[score].append(c["_id"])
+
+        sorted_scores = sorted(buckets.keys(), reverse=True)
+        selected: List[Tuple[str, int]] = []
+        remaining = max_profiles
+
+        # First pass — geometric decay: take ~50 % of remaining slots per bucket
+        for score in sorted_scores:
+            if remaining <= 0:
+                break
+            pool = buckets[score]
+            take = min(len(pool), max(1, remaining // 2))
+            chosen = random.sample(pool, take)
+            selected.extend((pid, score) for pid in chosen)
+            # Remove chosen from pool so second pass can use leftovers
+            buckets[score] = [p for p in pool if p not in set(chosen)]
+            remaining -= take
+
+        # Second pass — fill any remaining slots from unused candidates
+        if remaining > 0:
+            leftovers: List[Tuple[str, int]] = []
+            for score in sorted_scores:
+                for pid in buckets[score]:
+                    leftovers.append((pid, score))
+            if leftovers:
+                extra = random.sample(leftovers, min(len(leftovers), remaining))
+                selected.extend(extra)
+
+        return selected
+
+    async def _build_daily_recommendations(
         self,
         profile_id: str,
-        page: int = 1,
-        limit: int = 10,
-    ) -> PaginatedResponse[ProfileBase]:
+    ) -> List[Tuple[str, int]]:
         """
-        Finds similar profiles for a given profile ID based on:
-
-        Demographic filters (hard):
-            - Opposite gender
-            - Compatible height range (gender-specific rules)
-            - Compatible birth date range (±6 years, gender-specific)
-            - Exact marriage type match
-
-        Relevance scoring (soft — higher score = better match, max 10):
-            - +3  education_category  substring match, case-insensitive
-            - +2  job_category        substring match, case-insensitive
-            - +2  any overlapping tag
-            - +2  education_subcategory substring match, case-insensitive
-            - +1  job_location        substring match, case-insensitive
-
-        Results are sorted by relevance_score DESC, then listing_rand ASC
-        for variety within the same score tier.
-
-        Male seeking Female:
-            Height: female height_cm between (male_height - 20) and male_height
-            Birth date: female birth_date between male_birth_date and male_birth_date + 6 years
-
-        Female seeking Male:
-            Height: male height_cm between female_height and (female_height + 30)
-            Birth date: male birth_date between female_birth_date - 6 years and female_birth_date
+        Runs the full compatibility pipeline (filters + scoring), then
+        selects a diverse set of up to 20 profiles using score-bucket
+        sampling.  The result is cached for 24 hours.
         """
-        cache_key = (profile_id, page, limit)
-        if cache_key in _similar_profiles_cache:
-            logger.info(
-                f"Cache hit — similar profiles for profile_id={profile_id}, "
-                f"page={page}, limit={limit}"
-            )
-            return _similar_profiles_cache[cache_key]
-
         collection = db_manager.get_collection()
-        skip = (page - 1) * limit
 
         # 1. Fetch source profile
         source_doc = await collection.find_one({"_id": profile_id})
@@ -353,56 +377,129 @@ class ProfileService:
         relevance_score_stage = self._build_relevance_score_stage(source_doc)
 
         logger.info(
-            f"Executing similar profile search — profile_id={profile_id}, "
+            f"Building daily recommendations — profile_id={profile_id}, "
             f"gender={source_gender}, height_cm={source_height_cm}, "
             f"education_category={source_doc.get('education_category')}, "
             f"education_subcategory={source_doc.get('education_subcategory')}, "
             f"job_category={source_doc.get('job_category')}, "
             f"job_location={source_doc.get('job_location')}, "
             f"tags={source_doc.get('tags')}, "
-            f"marriage_type={source_marriage_type}, page={page}, limit={limit}"
+            f"marriage_type={source_marriage_type}"
         )
 
-        # 4. Aggregation pipeline
+        # 4. Aggregation — fetch scored candidates (capped at 200)
         pipeline = [
             {"$match": match_filter},
             relevance_score_stage,
-            {"$sort": {"relevance_score": -1, "listing_rand": 1}},
-            {
-                "$facet": {
-                    "metadata": [{"$count": "total"}],
-                    "data": [
-                        {"$skip": skip},
-                        {"$limit": limit},
-                    ],
-                }
-            },
+            {"$sort": {"relevance_score": -1}},
+            {"$limit": 200},
+            {"$project": {"_id": 1, "relevance_score": 1}},
         ]
 
         try:
             cursor = collection.aggregate(pipeline)
-            results = await cursor.to_list(length=1)
+            all_candidates = await cursor.to_list(length=200)
+        except Exception as e:
+            logger.error(f"Error fetching candidates for daily recommendations: {e}")
+            raise
 
-            if not results:
-                return PaginatedResponse(data=[], total=0, page=page, limit=limit, has_more=False)
+        # 5. Score-bucket random selection
+        selected = self._select_diverse_profiles(all_candidates)
 
-            facet_result = results[0]
-            metadata  = facet_result.get("metadata", [])
-            data_list = facet_result.get("data", [])
-            total     = metadata[0]["total"] if metadata else 0
+        # 6. Cache the selected IDs for 24 hours
+        _daily_recommendations_cache[profile_id] = selected
+        logger.info(
+            f"Cached {len(selected)} daily recommendations for "
+            f"profile_id={profile_id}"
+        )
 
-            profiles = [ProfileBase.model_validate(doc) for doc in data_list]
+        return selected
+
+    async def find_similar_profiles(
+        self,
+        profile_id: str,
+        page: int = 1,
+        limit: int = 10,
+    ) -> PaginatedResponse[ProfileBase]:
+        """
+        Finds similar profiles for a given profile ID based on:
+
+        Demographic filters (hard):
+            - Opposite gender
+            - Compatible height range (gender-specific rules)
+            - Compatible birth date range (±6 years, gender-specific)
+            - Exact marriage type match
+
+        Relevance scoring (soft — higher score = better match, max 10):
+            - +3  education_category  substring match, case-insensitive
+            - +2  job_category        substring match, case-insensitive
+            - +2  any overlapping tag
+            - +2  education_subcategory substring match, case-insensitive
+            - +1  job_location        substring match, case-insensitive
+
+        Daily diversity:
+            On the first request each day (or when the 24-hour cache expires),
+            up to 20 profiles are randomly selected from score-grouped buckets
+            using geometric decay — higher scores are preferred but lower-score
+            profiles are also included for variety.  Subsequent requests within
+            the same 24-hour window always return the same set, paginated.
+
+        Male seeking Female:
+            Height: female height_cm between (male_height - 20) and male_height
+            Birth date: female birth_date between male_birth_date and male_birth_date + 6 years
+
+        Female seeking Male:
+            Height: male height_cm between female_height and (female_height + 30)
+            Birth date: male birth_date between female_birth_date - 6 years and female_birth_date
+        """
+        collection = db_manager.get_collection()
+        skip = (page - 1) * limit
+
+        # --- Resolve daily recommendation set (cached or freshly generated) ---
+        if profile_id in _daily_recommendations_cache:
+            recommendations = _daily_recommendations_cache[profile_id]
+            logger.info(
+                f"Cache hit — daily recommendations for profile_id={profile_id}, "
+                f"page={page}, limit={limit}"
+            )
+        else:
+            recommendations = await self._build_daily_recommendations(profile_id)
+
+        total = len(recommendations)
+
+        # --- Paginate over the pre-selected recommendation IDs ---
+        page_slice = recommendations[skip : skip + limit]
+        if not page_slice:
+            return PaginatedResponse(
+                data=[], total=total, page=page, limit=limit, has_more=False
+            )
+
+        page_ids = [pid for pid, _score in page_slice]
+        score_map = {pid: score for pid, score in page_slice}
+
+        try:
+            # Fetch full profile documents for this page
+            docs = await collection.find({"_id": {"$in": page_ids}}).to_list(
+                length=limit
+            )
+
+            # Re-attach relevance_score and preserve the cached order
+            doc_map: dict = {}
+            for doc in docs:
+                doc["relevance_score"] = score_map.get(doc["_id"])
+                doc_map[doc["_id"]] = doc
+
+            ordered_docs = [doc_map[pid] for pid in page_ids if pid in doc_map]
+            profiles = [ProfileBase.model_validate(doc) for doc in ordered_docs]
             has_more = total > (skip + len(profiles))
 
-            response = PaginatedResponse(
+            return PaginatedResponse(
                 data=profiles,
                 total=total,
                 page=page,
                 limit=limit,
                 has_more=has_more,
             )
-            _similar_profiles_cache[cache_key] = response
-            return response
 
         except Exception as e:
             logger.error(f"Error executing similar profile search: {e}")
@@ -410,18 +507,17 @@ class ProfileService:
 
     def invalidate_similar_profiles_cache(self, profile_id: Optional[str] = None) -> None:
         """
-        Invalidates the similar profiles cache.
-        If profile_id is provided, only entries for that profile are removed.
+        Invalidates the daily recommendations cache.
+        If profile_id is provided, only the entry for that profile is removed.
         Otherwise, the entire cache is cleared.
         """
         if profile_id:
-            keys_to_delete = [k for k in _similar_profiles_cache if k[0] == profile_id]
-            for k in keys_to_delete:
-                del _similar_profiles_cache[k]
-            logger.info(f"Invalidated similar profiles cache for profile_id={profile_id}")
+            if profile_id in _daily_recommendations_cache:
+                del _daily_recommendations_cache[profile_id]
+            logger.info(f"Invalidated daily recommendations cache for profile_id={profile_id}")
         else:
-            _similar_profiles_cache.clear()
-            logger.info("Invalidated entire similar profiles cache")
+            _daily_recommendations_cache.clear()
+            logger.info("Invalidated entire daily recommendations cache")
 
 
 # Exported singleton

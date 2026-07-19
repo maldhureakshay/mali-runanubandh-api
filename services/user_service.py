@@ -13,7 +13,7 @@ class UserService:
     UserService handles business logic and MongoDB queries for the users collection.
     """
 
-    async def get_dashboard_metrics(self) -> dict:
+    async def get_dashboard_metrics(self, active_since_cutoff: Optional[datetime] = None) -> dict:
         """
         Retrieves total/active counts for both users and profiles.
         """
@@ -30,9 +30,16 @@ class UserService:
         total_profiles = await profiles_col.count_documents({})
         active_profiles = await profiles_col.count_documents({"active": True})
 
+        active_users_since_cutoff = 0
+        if active_since_cutoff:
+            active_users_since_cutoff = await users_col.count_documents({
+                "status": True,
+                "createdAt": {"$gte": active_since_cutoff}
+            })
+
         return {
             "totalUsers": total_users,
-            "activeUsers": active_users,
+            "activeUsers": active_users_since_cutoff,
             "totalProfiles": total_profiles,
             "activeProfiles": active_profiles
         }

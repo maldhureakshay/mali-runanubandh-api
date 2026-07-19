@@ -133,6 +133,11 @@ def run_tests():
     assert "activeUsers" in dashboard, "Expected activeUsers in dashboard metrics"
     assert "totalProfiles" in dashboard, "Expected totalProfiles in dashboard metrics"
     assert "activeProfiles" in dashboard, "Expected activeProfiles in dashboard metrics"
+    
+    # Test dashboard with active_since cutoff
+    dashboard_cutoff = make_request("/api/admin/dashboard", {"active_since": "2026-02-09T00:00:00"})
+    print(f"Dashboard metrics with cutoff 2026-02-09: {dashboard_cutoff}")
+    assert "activeUsersSinceCutoff" in dashboard_cutoff, "Expected activeUsersSinceCutoff in dashboard metrics"
     print("✅ Test 6 Passed!")
 
     # 7. Admin Users Pagination & Search

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Query, HTTPException, status
 from services.user_service import user_service
@@ -48,9 +49,14 @@ async def get_users(
     summary="Get dashboard metrics",
     description="Returns aggregate dashboard statistics: total/active users and profiles."
 )
-async def get_dashboard():
+async def get_dashboard(
+    active_since: Optional[datetime] = Query(
+        None,
+        description="Optional cutoff date to count active users created after/on this date (e.g. 2026-02-09T00:00:00Z)"
+    )
+):
     try:
-        metrics = await user_service.get_dashboard_metrics()
+        metrics = await user_service.get_dashboard_metrics(active_since_cutoff=active_since)
         return metrics
     except Exception as exc:
         raise HTTPException(

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from config import settings
 from database import db_manager
-from routes import profile
+from routes import profile, admin
 
 # Setup logging
 logging.basicConfig(
@@ -63,6 +63,7 @@ app.add_middleware(
 
 # Include profile API routers
 app.include_router(profile.router)
+app.include_router(admin.router)
 
 @app.get("/", include_in_schema=False)
 async def redirect_to_swagger():

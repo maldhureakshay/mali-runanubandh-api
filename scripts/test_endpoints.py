@@ -125,6 +125,24 @@ def run_tests():
     assert not intersection, "Pagination returned duplicate records across pages!"
     print("✅ Test 5 Passed!")
 
+    # 6. Admin Dashboard metrics
+    print("\n--- Test 6: Admin Dashboard Metrics ---")
+    dashboard = make_request("/api/admin/dashboard")
+    print(f"Dashboard metrics: {dashboard}")
+    assert "totalUsers" in dashboard, "Expected totalUsers in dashboard metrics"
+    assert "activeUsers" in dashboard, "Expected activeUsers in dashboard metrics"
+    assert "totalProfiles" in dashboard, "Expected totalProfiles in dashboard metrics"
+    assert "activeProfiles" in dashboard, "Expected activeProfiles in dashboard metrics"
+    print("✅ Test 6 Passed!")
+
+    # 7. Admin Users Pagination & Search
+    print("\n--- Test 7: Admin Users Pagination & Search ---")
+    users_result = make_request("/api/admin/users", {"page": 1, "limit": 5})
+    print(f"Users found: {users_result['total']}")
+    assert "data" in users_result, "Expected 'data' key in response"
+    assert "total" in users_result, "Expected 'total' key in response"
+    print("✅ Test 7 Passed!")
+
     print("\n==============================================")
     print("    ALL INTEGRATION TESTS PASSED SUCCESSFULLY! 🎉")
     print("==============================================")

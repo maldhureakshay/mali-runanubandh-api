@@ -73,8 +73,87 @@ class DatabaseManager:
                 background=True
             )
             logger.info(f"Geospatial index ready: {index_name}")
+            
+            # Ensure unique index on likes collection
+            likes_collection = self.db["likes"]
+            likes_index_name = await likes_collection.create_index(
+                [("postId", 1), ("userId", 1)],
+                name="likes_post_user_uidx",
+                unique=True,
+                background=True
+            )
+            logger.info(f"Likes compound index ready: {likes_index_name}")
+
+            # Ensure unique indexes on poll_votes collection
+            votes_collection = self.db["poll_votes"]
+            
+            # Index 1: Single-choice (postId + userId unique)
+            vote_single_idx = await votes_collection.create_index(
+                [("postId", 1), ("userId", 1)],
+                name="poll_votes_single_uidx",
+                unique=True,
+                partialFilterExpression={"allowMultipleSelection": False},
+                background=True
+            )
+            logger.info(f"Poll single-choice index ready: {vote_single_idx}")
+            
+            # Index 2: Multiple-choice (postId + userId + optionId unique)
+            vote_multi_idx = await votes_collection.create_index(
+                [("postId", 1), ("userId", 1), ("optionId", 1)],
+                name="poll_votes_multi_uidx",
+                unique=True,
+                partialFilterExpression={"allowMultipleSelection": True},
+                background=True
+            )
+            logger.info(f"Poll multi-choice index ready: {vote_multi_idx}")
+
+            # Ensure indexes on reports collection
+            reports_collection = self.db["reports"]
+            await reports_collection.create_index([("postId", 1)], name="reports_post_id_idx", background=True)
+            await reports_collection.create_index([("reportedBy", 1)], name="reports_reported_by_idx", background=True)
+            await reports_collection.create_index([("status", 1), ("createdAt", 1)], name="reports_status_created_idx", background=True)
+            await reports_collection.create_index(
+                [("postId", 1), ("reportedBy", 1)],
+                name="reports_post_reporter_uidx",
+                unique=True,
+                background=True
+            )
+            logger.info("Reports collection indexes successfully verified.")
+
+            # Ensure indexes on notifications collection
+            notifications_collection = self.db["notifications"]
+            await notifications_collection.create_index(
+                [("recipientUserId", 1), ("createdAt", -1)],
+                name="notifications_recipient_created_idx",
+                background=True
+            )
+            await notifications_collection.create_index(
+                [("recipientUserId", 1), ("read", 1)],
+                name="notifications_recipient_read_idx",
+                background=True
+            )
+            logger.info("Notifications collection indexes successfully verified.")
+
+            # Ensure indexes on posts collection
+            posts_collection = self.db["posts"]
+            await posts_collection.create_index(
+                [("moderation.status", 1), ("visibility.visibility", 1), ("publishedAt", -1)],
+                name="posts_feed_idx",
+                background=True
+            )
+            await posts_collection.create_index(
+                [("expiresAt", 1)],
+                name="posts_expires_idx",
+                background=True
+            )
+            await posts_collection.create_index(
+                [("type", 1), ("moderation.status", 1), ("publishedAt", -1)],
+                name="posts_type_status_pub_idx",
+                background=True
+            )
+            logger.info("Posts collection indexes successfully verified.")
         except PyMongoError as e:
-            logger.error(f"Error creating spatial index on MongoDB: {e}")
+            logger.error(f"Error creating database indexes: {e}")
             raise e
 
     def get_collection(self):

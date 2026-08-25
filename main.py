@@ -24,6 +24,35 @@ async def lifespan(app: FastAPI):
     try:
         # Start database connection pool
         db_manager.connect()
+        # Connect community database manager
+        from app.core.database import db_manager as community_db_manager
+        community_db_manager.connect()
+        # Setup event framework handlers
+        from app.core.dependencies import setup_event_handlers
+        await setup_event_handlers(community_db_manager.db)
+        
+        # Configure structured logging formatting
+        root_logger = logging.getLogger()
+        log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
+        root_logger.setLevel(log_level)
+        for h in root_logger.handlers:
+            h.setFormatter(StructuredLogFormatter())
+            
+        # Start background job runner
+        job_runner.start()
+        
+        # Start daily birthday posts generator job
+        from app.community.repositories.post import PostRepository
+        from app.community.services.birthday import BirthdayPostService, schedule_daily_birthday_job
+        import asyncio
+        post_repo = PostRepository(community_db_manager.db)
+        birthday_service = BirthdayPostService(post_repo)
+        asyncio.create_task(schedule_daily_birthday_job(job_queue, birthday_service))
+
+        
+        # Initialize Firebase Admin SDK
+        from app.core.firebase import initialize_firebase
+        initialize_firebase()
         # Ensure correct geospatial indexing
         await db_manager.ensure_indexes()
         logger.info("Application resources initialized successfully.")
@@ -35,8 +64,26 @@ async def lifespan(app: FastAPI):
 
     # Shutdown sequence
     logger.info("Releasing application resources...")
+    # Stop background job runner
+    await job_runner.stop()
     db_manager.disconnect()
+    from app.core.database import db_manager as community_db_manager
+    community_db_manager.disconnect()
     logger.info("Application shut down clean.")
+
+# Instantiate Platform singletons
+from app.platform.cache import MemoryCacheProvider
+from app.platform.idempotency import IdempotencyService, IdempotencyMiddleware
+from app.platform.rate_limit import InMemRateLimiter, RateLimitMiddleware
+from app.platform.background_jobs import JobQueue, BackgroundJobRunner
+from app.platform.monitoring import MonitoringMiddleware, MetricsService, StructuredLogFormatter
+
+cache_provider = MemoryCacheProvider()
+idempotency_service = IdempotencyService(cache_provider)
+rate_limiter = InMemRateLimiter(settings.RATE_LIMIT_REQUESTS, settings.RATE_LIMIT_WINDOW_SECS)
+job_queue = JobQueue()
+job_runner = BackgroundJobRunner(job_queue, max_workers=settings.BACKGROUND_JOBS_MAX_WORKERS)
+metrics_service = MetricsService()
 
 # Instantiate FastAPI application
 app = FastAPI(
@@ -52,6 +99,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+from app.core.exceptions import register_exception_handlers
+register_exception_handlers(app)
+
 # Enable Cross-Origin Resource Sharing (CORS) for local and production integrations
 app.add_middleware(
     CORSMiddleware,
@@ -61,9 +111,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register Platform Middlewares
+app.add_middleware(RateLimitMiddleware, limiter=rate_limiter)
+app.add_middleware(IdempotencyMiddleware, idempotency_service=idempotency_service)
+app.add_middleware(MonitoringMiddleware)
+
 # Include profile API routers
 app.include_router(profile.router)
 app.include_router(admin.router)
+
+# Include community API routers
+from app.community.routers import community_router
+app.include_router(community_router)
+
+# Include notifications API router
+from app.notifications.routers.notifications import router as notifications_router
+app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["Notifications"])
+
+# Include health API router
+from app.platform.health import health_router
+app.include_router(health_router, tags=["Health Checks"])
 
 @app.get("/", include_in_schema=False)
 async def redirect_to_swagger():
@@ -71,18 +138,6 @@ async def redirect_to_swagger():
     Redirects application root requests directly to interactive Swagger API documentation.
     """
     return RedirectResponse(url="/docs")
-
-@app.get("/health", include_in_schema=False)
-async def health_check():
-    """
-    Health check endpoint for load balancers, monitoring, and deployment verification.
-    Returns MongoDB connection status.
-    """
-    db_ok = await db_manager.check_health()
-    return {
-        "status": "healthy" if db_ok else "degraded",
-        "database": "connected" if db_ok else "disconnected"
-    }
 
 if __name__ == "__main__":
     import uvicorn

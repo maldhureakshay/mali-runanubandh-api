@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     # Production MongoDB settings (Source for DB Pull script)
     PROD_MONGO_URI: Optional[str] = None
 
+    # Platform Infrastructure settings
+    RATE_LIMIT_REQUESTS: int = 100
+    RATE_LIMIT_WINDOW_SECS: int = 60
+    CACHE_DEFAULT_TTL_SECS: int = 300
+    BACKGROUND_JOBS_MAX_WORKERS: int = 5
+    LOG_LEVEL: str = "INFO"
+    METRICS_ENABLED: bool = True
+    PERFORMANCE_THRESHOLD_MS: int = 500
+
     # Configure Pydantic Settings to load from .env file
     model_config = SettingsConfigDict(
         env_file=".env",

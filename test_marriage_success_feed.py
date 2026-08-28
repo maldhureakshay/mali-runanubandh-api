@@ -407,7 +407,7 @@ class TestExistingPostTypesUnaffectedByPhase3(unittest.TestCase):
     def test_birthday_post_still_serializes_correctly(self):
         """BIRTHDAY posts must still serialize through PostResponse after Phase 3 changes."""
         now = datetime.now(timezone.utc)
-        bday_meta = BirthdayMetadata(profileId="profile_xyz", birthdayDate=now)
+        bday_meta = BirthdayMetadata(profileName="Test User", profileId="profile_xyz", birthdayDate=now)
         post = Post(
             type=PostType.BIRTHDAY,
             author=_author(),

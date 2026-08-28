@@ -70,9 +70,8 @@ class TestBirthdayNotifications(unittest.IsolatedAsyncioTestCase):
             body="Wishing you a great day!",
             images=[]
         )
-        self.birthday_metadata = BirthdayMetadata(
-            profileId="profile_birthday_person",
-            birthdayDate=datetime.datetime(2026, 8, 8, tzinfo=timezone.utc)
+        self.birthday_metadata = BirthdayMetadata(profileName="Test User", profileId="profile_birthday_person",
+            birthdayDate=datetime.datetime.now(timezone.utc)
         )
 
     async def test_create_comment_publishes_birthday_wish_created(self):

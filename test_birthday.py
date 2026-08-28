@@ -58,13 +58,13 @@ class TestBirthdayPosts(unittest.IsolatedAsyncioTestCase):
     def test_birthday_metadata_validation(self):
         # Valid Birthday metadata
         bday = datetime.now(timezone.utc)
-        meta = BirthdayMetadata(profileId="profile_456", birthdayDate=bday)
+        meta = BirthdayMetadata(profileName="Test User", profileId="profile_456", birthdayDate=bday)
         self.assertEqual(meta.profileId, "profile_456")
         self.assertEqual(meta.birthdayDate, bday)
 
         # Missing fields in metadata should fail
         with self.assertRaises(ValidationError):
-            BirthdayMetadata(profileId="profile_456")
+            BirthdayMetadata(profileName="Test User", profileId="profile_456")
 
     def test_expires_at_calculation(self):
         # Test birthday date: 2026-08-08 12:00:00 (UTC or timezone naive)
@@ -74,7 +74,7 @@ class TestBirthdayPosts(unittest.IsolatedAsyncioTestCase):
             type=PostType.BIRTHDAY,
             author=self.author,
             content=self.content,
-            metadata=BirthdayMetadata(profileId="profile_456", birthdayDate=bdate),
+            metadata=BirthdayMetadata(profileName="Test User", profileId="profile_456", birthdayDate=bdate),
             moderation=Moderation(status=PostStatus.APPROVED),
             visibility=VisibilitySettings(visibility=Visibility.PUBLIC),
         )
@@ -90,7 +90,7 @@ class TestBirthdayPosts(unittest.IsolatedAsyncioTestCase):
             type=PostType.BIRTHDAY,
             author=self.author,
             content=self.content,
-            metadata=BirthdayMetadata(profileId="profile_456", birthdayDate=bdate),
+            metadata=BirthdayMetadata(profileName="Test User", profileId="profile_456", birthdayDate=bdate),
             moderation=Moderation(status=PostStatus.APPROVED),
             visibility=VisibilitySettings(visibility=Visibility.PUBLIC),
         )
@@ -107,7 +107,7 @@ class TestBirthdayPosts(unittest.IsolatedAsyncioTestCase):
             PostCreate(
                 type=PostType.BIRTHDAY,
                 content=self.content,
-                metadata=BirthdayMetadata(profileId="profile_456", birthdayDate=datetime.now(timezone.utc)),
+                metadata=BirthdayMetadata(profileName="Test User", profileId="profile_456", birthdayDate=datetime.now(timezone.utc)),
                 visibility=VisibilitySettings(visibility=Visibility.PUBLIC),
             )
         self.assertIn("Birthday posts cannot be created by clients directly.", str(ctx.exception))

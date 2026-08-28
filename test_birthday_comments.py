@@ -48,9 +48,8 @@ class TestBirthdayComments(unittest.IsolatedAsyncioTestCase):
             body="Wishing you a great day!",
             images=[]
         )
-        self.birthday_metadata = BirthdayMetadata(
-            profileId="profile_456",
-            birthdayDate=datetime(2026, 8, 8, tzinfo=timezone.utc)
+        self.birthday_metadata = BirthdayMetadata(profileName="Test User", profileId="profile_456",
+            birthdayDate=datetime.now(timezone.utc)
         )
 
     async def test_comment_on_active_approved_birthday_post(self):
@@ -99,8 +98,7 @@ class TestBirthdayComments(unittest.IsolatedAsyncioTestCase):
         yesterday = now - timedelta(days=1)
         two_days_ago = now - timedelta(days=2)
         
-        expired_metadata = BirthdayMetadata(
-            profileId="profile_456",
+        expired_metadata = BirthdayMetadata(profileName="Test User", profileId="profile_456",
             birthdayDate=two_days_ago
         )
         

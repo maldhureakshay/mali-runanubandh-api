@@ -40,15 +40,14 @@ async def lifespan(app: FastAPI):
             
         # Start background job runner
         job_runner.start()
-        
-        # Start daily birthday posts generator job
+
+        # Trigger one-off birthday post generation on startup to catch up
         from app.community.repositories.post import PostRepository
-        from app.community.services.birthday import BirthdayPostService, schedule_daily_birthday_job
+        from app.community.services.birthday import BirthdayPostService
         import asyncio
         post_repo = PostRepository(community_db_manager.db)
         birthday_service = BirthdayPostService(post_repo)
-        asyncio.create_task(schedule_daily_birthday_job(job_queue, birthday_service))
-
+        asyncio.create_task(birthday_service.generate_birthday_posts())
         
         # Initialize Firebase Admin SDK
         from app.core.firebase import initialize_firebase

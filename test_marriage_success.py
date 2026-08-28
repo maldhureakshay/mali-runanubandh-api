@@ -245,8 +245,7 @@ class TestMarriageSuccessPostModel(unittest.TestCase):
                 type=PostType.MARRIAGE_SUCCESS,
                 author=_author(),
                 content=_content(),
-                metadata=BirthdayMetadata(
-                    profileId="profile_abc",
+                metadata=BirthdayMetadata(profileName="Test User", profileId="profile_abc",
                     birthdayDate=datetime.now(timezone.utc),
                 ),
                 moderation=Moderation(status=PostStatus.APPROVED),
@@ -360,8 +359,7 @@ class TestPostCreateRejectsMarriageSuccess(unittest.TestCase):
             PostCreate(
                 type=PostType.BIRTHDAY,
                 content=_content(),
-                metadata=BirthdayMetadata(
-                    profileId="profile_abc",
+                metadata=BirthdayMetadata(profileName="Test User", profileId="profile_abc",
                     birthdayDate=datetime.now(timezone.utc),
                 ),
                 visibility=VisibilitySettings(visibility=Visibility.PUBLIC),

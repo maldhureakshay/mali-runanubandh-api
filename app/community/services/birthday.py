@@ -92,6 +92,7 @@ class BirthdayPostService:
                 bday_date = datetime(today_ist.year, today_ist.month, today_ist.day, tzinfo=ist)
                 metadata = BirthdayMetadata(
                     profileId=profile_id,
+                    profileName=full_name,
                     birthdayDate=bday_date
                 )
                 
@@ -128,30 +129,4 @@ class BirthdayPostService:
         return created_count
 
 
-from app.platform.background_jobs import BackgroundJob
-import asyncio
-
-class BirthdayPostJob(BackgroundJob):
-    def __init__(self, service: BirthdayPostService) -> None:
-        self.service = service
-
-    async def run(self) -> None:
-        logger.info("Running scheduled BirthdayPostJob...")
-        await self.service.generate_birthday_posts()
-
-
-async def schedule_daily_birthday_job(job_queue: Any, service: BirthdayPostService) -> None:
-    """
-    Schedules the BirthdayPostJob to run daily using the existing background job runner.
-    """
-    # Enqueue immediately on startup
-    job = BirthdayPostJob(service)
-    logger.info("Enqueuing initial BirthdayPostJob on startup")
-    await job_queue.enqueue(job)
-
-    while True:
-        # Sleep 24 hours
-        await asyncio.sleep(86400)
-        logger.info("Enqueuing daily BirthdayPostJob")
-        await job_queue.enqueue(job)
 

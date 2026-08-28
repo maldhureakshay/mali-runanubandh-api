@@ -172,6 +172,8 @@ class AnnouncementMetadata(BaseModel):
     category: Optional[str] = Field(None, description="Announcement category (Event, Notice, etc.)")
     eventDate: Optional[datetime] = Field(None, description="UTC timestamp of the event")
     location: Optional[str] = Field(None, description="Event location")
+    buttonName: Optional[str] = Field(None, description="Custom name for the button")
+    buttonLink: Optional[str] = Field(None, description="URL link for the button")
 
 
 class BirthdayMetadata(BaseModel):
@@ -181,6 +183,7 @@ class BirthdayMetadata(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     profileId: str = Field(..., description="Matrimony profile ID of the birthday user")
+    profileName: str = Field("Community Member", description="Full name of the birthday user")
     birthdayDate: datetime = Field(..., description="UTC timestamp of the birthday date")
 
 

@@ -138,7 +138,7 @@ async def get_my_posts(
         meta_data["next_cursor"] = next_cursor
 
     return success_response(
-        data=serialized_posts,
+        data=final_responses,
         message="My posts fetched successfully.",
         status_code=status.HTTP_200_OK,
         meta=meta_data if meta_data else None

@@ -55,9 +55,8 @@ class TestBirthdayCommunityFeed(unittest.IsolatedAsyncioTestCase):
             body="Wishing Jane Doe a very happy birthday!",
             images=[]
         )
-        self.birthday_metadata = BirthdayMetadata(
-            profileId="profile_123",
-            birthdayDate=datetime(2026, 8, 8, tzinfo=timezone.utc)
+        self.birthday_metadata = BirthdayMetadata(profileName="Test User", profileId="profile_123",
+            birthdayDate=datetime.now(timezone.utc)
         )
 
     async def test_find_feed_filters_expired_and_includes_approved_birthdays(self):

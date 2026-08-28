@@ -6,3 +6,4 @@ pydantic-settings>=2.0
 python-dotenv>=1.0.0
 gunicorn>=22.0.0
 cachetools>=5.3.0
+firebase-admin>=7.5.0

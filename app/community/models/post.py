@@ -31,10 +31,10 @@ from app.community.enums import PostStatus, PostType, Visibility
 #    db.posts.create_index([("moderation.status", 1), ("type", 1)])
 #    db.posts.create_index([("moderation.status", 1), ("author.userId", 1)])
 #
-# 5. Community feed index (covers find_feed: status + visibility + sort by publishedAt):
+# 5. Community feed index (covers find_feed: status + visibility + sort by isPinned and publishedAt):
 #    db.posts.create_index(
-#        [("moderation.status", 1), ("visibility.visibility", 1), ("publishedAt", -1)],
-#        name="idx_feed_status_visibility_published"
+#        [("moderation.status", 1), ("visibility.visibility", 1), ("isPinned", -1), ("publishedAt", -1)],
+#        name="idx_feed_status_visibility_pinned_published"
 #    )
 #
 # 6. Expiry index (sparse; supports expiresAt > now filtering for BIRTHDAY and
@@ -296,6 +296,7 @@ class Post(BaseModel):
     updatedAt: datetime = Field(default_factory=datetime.utcnow, description="UTC timestamp of last update")
     publishedAt: Optional[datetime] = Field(None, description="UTC timestamp when the post was approved and published")
     expiresAt: Optional[datetime] = Field(None, description="UTC timestamp of post expiration")
+    isPinned: bool = Field(False, description="Whether the post is pinned to the top of the feed")
 
 
     @model_validator(mode="after")
@@ -375,11 +376,18 @@ class Post(BaseModel):
             if not metadata.person1ProfileId or not metadata.person1ProfileId.strip():
                 raise ValueError("person1ProfileId is required for MARRIAGE_SUCCESS type.")
 
-            # Set expiration: 30 days from creation time
-            from datetime import timezone, timedelta
             self.expiresAt = self.createdAt.replace(tzinfo=timezone.utc) + timedelta(days=30) \
                 if self.createdAt.tzinfo is None \
                 else self.createdAt + timedelta(days=30)
+
+        # Set isPinned for announcements with HIGH priority
+        if post_type == PostType.ANNOUNCEMENT and metadata is not None and isinstance(metadata, AnnouncementMetadata):
+            if metadata.priority == "HIGH":
+                self.isPinned = True
+            else:
+                self.isPinned = False
+        else:
+            self.isPinned = False
 
         return self
 

@@ -294,7 +294,7 @@ class PostRepository(BaseRepository):
                 }
             ]
         }
-        sort = [("publishedAt", -1), ("_id", -1)]
+        sort = [("isPinned", -1), ("publishedAt", -1), ("_id", -1)]
         
         docs, next_cursor = await self.find_many(filters, sort=sort, limit=limit, cursor=cursor)
         posts = []
@@ -304,14 +304,6 @@ class PostRepository(BaseRepository):
             except Exception as e:
                 logger.error(f"Failed to validate post {doc.get('_id')}: {e}")
 
-        # Sort: pinned (priority == 'HIGH') first, then publishedAt/createdAt descending
-        posts.sort(
-            key=lambda p: (
-                1 if (p.metadata and getattr(p.metadata, 'priority', None) == 'HIGH') else 0,
-                p.publishedAt or p.createdAt
-            ),
-            reverse=True
-        )
         return posts, next_cursor
 
     async def find_posts_by_author(
@@ -376,7 +368,7 @@ class PostRepository(BaseRepository):
                 }
             ]
         }
-        sort = [("publishedAt", -1), ("_id", -1)]
+        sort = [("isPinned", -1), ("publishedAt", -1), ("_id", -1)]
         
         docs, next_cursor = await self.find_many(filters, sort=sort, limit=limit, cursor=cursor)
         posts = []

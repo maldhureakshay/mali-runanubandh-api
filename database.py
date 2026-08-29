@@ -136,9 +136,14 @@ class DatabaseManager:
 
             # Ensure indexes on posts collection
             posts_collection = self.db["posts"]
+            try:
+                await posts_collection.drop_index("posts_feed_idx")
+            except PyMongoError:
+                pass
+                
             await posts_collection.create_index(
-                [("moderation.status", 1), ("visibility.visibility", 1), ("publishedAt", -1)],
-                name="posts_feed_idx",
+                [("moderation.status", 1), ("visibility.visibility", 1), ("isPinned", -1), ("publishedAt", -1)],
+                name="posts_feed_v2_idx",
                 background=True
             )
             await posts_collection.create_index(
@@ -146,9 +151,15 @@ class DatabaseManager:
                 name="posts_expires_idx",
                 background=True
             )
+            
+            try:
+                await posts_collection.drop_index("posts_type_status_pub_idx")
+            except PyMongoError:
+                pass
+                
             await posts_collection.create_index(
-                [("type", 1), ("moderation.status", 1), ("publishedAt", -1)],
-                name="posts_type_status_pub_idx",
+                [("type", 1), ("moderation.status", 1), ("isPinned", -1), ("publishedAt", -1)],
+                name="posts_type_status_pub_v2_idx",
                 background=True
             )
             logger.info("Posts collection indexes successfully verified.")

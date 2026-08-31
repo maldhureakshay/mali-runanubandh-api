@@ -211,7 +211,7 @@ async def get_feed(
             "engineers": stats.engineers if stats else "0",
             "new": stats.new if stats else "0",
             "verified": stats.verified if stats else "0",
-            "subcastes": ["Gase", "Jire", "Phool", "Kase", "Bhaure"]
+            "subcastes": ["Gase", "Jire", "Phool", "Kase", "Bhaure", "Marar", "Lonari", "Saini", "Kosare", "Halade", "Savata", "Kach Lingayat", "Kadu", "Bawane", "Adhyaprabhu", "Vanmali"]
         }
     }
         

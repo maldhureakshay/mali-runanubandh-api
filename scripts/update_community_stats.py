@@ -102,12 +102,12 @@ async def main():
         engineers_count = await get_algolia_count("engineer")
         
         stats = CommunityStatisticsDB(
-            members=f"{members_count:,}+" if members_count > 0 else "0",
-            activeProfiles=f"{active_profiles_count:,}+" if active_profiles_count > 0 else "0",
-            doctors=f"{doctors_count:,}+" if doctors_count > 0 else "0",
-            engineers=f"{engineers_count:,}+" if engineers_count > 0 else "0",
-            new=f"{new_profiles_count:,}+" if new_profiles_count > 0 else "0",
-            verified=f"{verified_profiles_count:,}+" if verified_profiles_count > 0 else "0"
+            members=members_count,
+            activeProfiles=active_profiles_count,
+            doctors=doctors_count,
+            engineers=engineers_count,
+            new=new_profiles_count,
+            verified=verified_profiles_count
         )
         
         logger.info(f"Calculated Stats: {stats.model_dump()}")

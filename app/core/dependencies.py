@@ -168,6 +168,14 @@ async def get_moderation_dashboard_repository(db: AsyncIOMotorDatabase = Depends
     return ModerationDashboardRepository(db)
 
 
+async def get_statistics_repository(db: AsyncIOMotorDatabase = Depends(get_db)) -> Any:
+    """
+    Dependency provider for StatisticsRepository.
+    """
+    from app.community.repositories.statistics import StatisticsRepository
+    return StatisticsRepository(db)
+
+
 _event_dispatcher = None
 _event_bus = None
 _event_publisher = None

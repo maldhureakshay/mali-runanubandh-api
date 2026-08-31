@@ -21,9 +21,11 @@ from app.core.dependencies import (
     get_poll_service,
     get_current_user,
     get_current_user_optional,
+    get_statistics_repository,
     AuthenticatedUser,
     ADMIN,
 )
+from app.community.repositories.statistics import StatisticsRepository
 from app.community.routers.utils import (
     get_author_snapshot_from_firestore,
     enrich_posts_with_profile_snapshots
@@ -159,7 +161,8 @@ async def get_feed(
     current_user: Optional[AuthenticatedUser] = Depends(get_current_user_optional),
     post_service: PostService = Depends(get_post_service),
     like_service: LikeService = Depends(get_like_service),
-    poll_service: PollService = Depends(get_poll_service)
+    poll_service: PollService = Depends(get_poll_service),
+    stats_repo: StatisticsRepository = Depends(get_statistics_repository)
 ) -> Any:
     logger.info("REST Request - Get Feed: limit=%d, cursor=%s, type=%s, visibility=%s", limit, cursor, type, visibility)
     
@@ -198,10 +201,25 @@ async def get_feed(
         PostResponse.model_validate(p).model_dump(mode="json") for p in enriched_posts
     ]
         
+    stats = await stats_repo.get_statistics()
+    
+    meta = {
+        "statistics": {
+            "members": stats.members if stats else "0",
+            "activeProfiles": stats.activeProfiles if stats else "0",
+            "doctors": stats.doctors if stats else "0",
+            "engineers": stats.engineers if stats else "0",
+            "new": stats.new if stats else "0",
+            "verified": stats.verified if stats else "0",
+            "subcastes": ["Gase", "Jire", "Phool", "Kase", "Bhaure"]
+        }
+    }
+        
     return success_response(
         data=final_responses,
         message="Feed fetched successfully.",
-        status_code=status.HTTP_200_OK
+        status_code=status.HTTP_200_OK,
+        meta=meta
     )
 
 
